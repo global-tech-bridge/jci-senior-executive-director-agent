@@ -77,12 +77,30 @@ def resolve_audience(repo: Repository, event: Event, audience: str) -> list[str]
 
 
 def stage_job_id(event_id: str, stage_name: str) -> str:
-    """ステージ単位の冪等キー（同一イベント×ステージは一度だけ）。"""
+    """ステージ単位のジョブ/ログ id プレフィックス。"""
     return f"{event_id}:{stage_name}"
 
 
+def sent_member_ids(repo: Repository, event_id: str, stage_name: str) -> set[str]:
+    """そのイベント×ステージで既に ok 送信済みのメンバー id 集合。"""
+    from .models import DeliveryResult
+
+    job_id = stage_job_id(event_id, stage_name)
+    return {
+        log.member_id
+        for log in repo.list_delivery_logs(job_id=job_id)
+        if log.result == DeliveryResult.ok
+    }
+
+
 def plan_reminders(repo: Repository, now: datetime) -> list[DeliveryJob]:
-    """発火時刻を過ぎた未送信ステージの配信ジョブを生成・保存して返す。"""
+    """発火時刻を過ぎた各ステージについて『未だ ok 送信できていない対象者』向けの
+    配信ジョブを生成・保存して返す。
+
+    メンバー単位冪等: ok 送信済みは除外するため二度送らない。一方で静音時間/レート/
+    キルスイッチでブロックされた未送信者は次回 tick で再び対象になり再送される。
+    対象者が残っていないステージはジョブを作らない。
+    """
     jobs: list[DeliveryJob] = []
     from .models import EventStatus
 
@@ -93,10 +111,12 @@ def plan_reminders(repo: Repository, now: datetime) -> list[DeliveryJob]:
         if policy is None:
             continue
         for stage in due_stages(policy, event, now):
+            audience = resolve_audience(repo, event, stage.audience)
+            already = sent_member_ids(repo, event.event_id, stage.name)
+            targets = [mid for mid in audience if mid not in already]
+            if not targets:
+                continue
             job_id = stage_job_id(event.event_id, stage.name)
-            if repo.get_delivery_job(job_id) is not None:
-                continue  # 既に発火済み（冪等）
-            targets = resolve_audience(repo, event, stage.audience)
             job = DeliveryJob(
                 job_id=job_id,
                 type="reminder",

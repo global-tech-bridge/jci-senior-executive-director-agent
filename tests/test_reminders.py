@@ -65,14 +65,42 @@ def test_resolve_audience_unanswered():
     assert set(ids) == {"m2", "m3"}
 
 
-def test_plan_reminders_idempotent():
+def test_plan_reminders_due_stages():
     repo = setup_repo()
     now = DEADLINE - timedelta(days=2)  # 依頼/リマインドが due
     jobs = plan_reminders(repo, now)
     assert {j.stage for j in jobs} == {"依頼", "リマインド"}
-    # 再実行しても新規ジョブは作られない（冪等）
+
+
+def test_member_level_idempotent_after_ok_send():
+    """ok送信済みメンバーは再planで対象から外れる（二重送信しない）。"""
+    repo = setup_repo()
+    now = datetime(2026, 6, 19, 12, 0)  # 依頼ステージのみ due・昼間
+    job = plan_reminders(repo, now)[0]
+    execute_delivery(repo, job, "出欠依頼", now=now, sender=lambda mid: True)
+    # 全員ok済み → 再planでは依頼ステージの対象者ゼロ
     jobs2 = plan_reminders(repo, now)
-    assert jobs2 == []
+    assert all(j.stage != "依頼" for j in jobs2)
+
+
+def test_blocked_member_is_resent_next_tick():
+    """静音時間でブロックされた未送信者は次tickで再送対象になる。"""
+    from app.models import QuietHours, Settings
+
+    repo = setup_repo()
+    repo.save_settings(Settings(quiet_hours=QuietHours(start="21:00", end="08:00")))
+    # 1) 静音時間(23時)に発火 → 全員deferred(未ok)
+    t_night = datetime(2026, 6, 19, 23, 0)
+    job = plan_reminders(repo, t_night)[0]
+    rep1 = execute_delivery(repo, job, "出欠依頼", now=t_night, sender=lambda mid: True)
+    assert rep1.deferred == 3 and rep1.sent == 0
+    # 2) 翌朝(昼間)に再tick → 同じ3人が対象として残り、今度は送信される
+    t_day = datetime(2026, 6, 20, 12, 0)
+    jobs2 = plan_reminders(repo, t_day)
+    req = next(j for j in jobs2 if j.stage == "依頼")
+    assert set(req.targets) == {"m1", "m2", "m3"}
+    rep2 = execute_delivery(repo, req, "出欠依頼", now=t_day, sender=lambda mid: True)
+    assert rep2.sent == 3
 
 
 def test_execute_delivery_sends_to_targets():
