@@ -13,6 +13,7 @@
 - チャネルアクセストークン未設定でも Webhook は 200 を返し受信ログを残す（返信のみスキップ）。
 """
 import logging
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from linebot.v3 import WebhookParser
@@ -27,6 +28,8 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 
 from . import config
+from .invite import verify_and_link
+from .repository import Repository
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jci-agent")
@@ -44,6 +47,19 @@ def get_parser() -> WebhookParser | None:
     """channel secret から Webhook パーサを構築（未設定なら None）。"""
     secret = config.line_channel_secret()
     return WebhookParser(secret) if secret else None
+
+
+_repo: Repository | None = None
+
+
+def get_repo() -> Repository:
+    """リポジトリを取得（本番=Firestore）。テストでは monkeypatch する。"""
+    global _repo
+    if _repo is None:
+        from .firestore_repo import FirestoreRepository
+
+        _repo = FirestoreRepository(project=config.PROJECT_ID)
+    return _repo
 
 
 def _access_token_ready(token: str | None) -> bool:
@@ -81,15 +97,30 @@ def healthz():
     }
 
 
+def handle_text_message(user_id: str, text: str) -> str:
+    """テキストメッセージへの応答文を生成。
+
+    未連携ユーザーからのメッセージは招待コードとして照合し本人確認を行う。
+    連携済みユーザーへの応答は後続マイルストーン（出欠等）で拡張する。
+    """
+    repo = get_repo()
+    member = repo.get_member_by_line_user_id(user_id)
+    if member is None:
+        result = verify_and_link(repo, user_id, text, now=datetime.now())
+        return result.message
+    return f"{member.name}さん、受信しました（疎通確認）: {text}"
+
+
 def handle_event(event) -> None:
     """単一の LINE イベントを処理する。"""
     if isinstance(event, FollowEvent):
         logger.info("follow event: userId=%s", event.source.user_id)
         reply(event.reply_token, WELCOME_TEXT)
     elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
+        user_id = event.source.user_id
         text = event.message.text
-        logger.info("message event: userId=%s text=%s", event.source.user_id, text)
-        reply(event.reply_token, f"受信しました（疎通確認）: {text}")
+        logger.info("message event: userId=%s text=%s", user_id, text)
+        reply(event.reply_token, handle_text_message(user_id, text))
     else:
         logger.info("other event: %s", type(event).__name__)
 

@@ -88,7 +88,14 @@ def test_webhook_follow_triggers_welcome(monkeypatch):
     assert "招待コード" in text
 
 
-def test_webhook_message_echo(monkeypatch):
+def test_webhook_message_echo_for_linked_member(monkeypatch):
+    from app.models import Member
+    from app.repository import InMemoryRepository
+
+    repo = InMemoryRepository()
+    repo.upsert_member(Member(member_id="m1", name="猪苗代 太郎", line_user_id="U_test_user"))
+    monkeypatch.setattr(main, "get_repo", lambda: repo)
+
     captured = []
     monkeypatch.setattr(main, "reply", lambda token, text: captured.append((token, text)) or True)
 
@@ -103,6 +110,26 @@ def test_webhook_message_echo(monkeypatch):
     token, text = captured[0]
     assert token == "reply-token-msg"
     assert "こんにちは" in text
+    assert "猪苗代 太郎" in text
+
+
+def test_webhook_message_unlinked_user_treated_as_code(monkeypatch):
+    from app.repository import InMemoryRepository
+
+    repo = InMemoryRepository()  # コード未登録 → 無効扱い
+    monkeypatch.setattr(main, "get_repo", lambda: repo)
+
+    captured = []
+    monkeypatch.setattr(main, "reply", lambda token, text: captured.append((token, text)) or True)
+
+    body = _event_envelope(MESSAGE_EVENT)
+    res = client.post(
+        "/line/webhook",
+        content=body,
+        headers={"X-Line-Signature": sign(body)},
+    )
+    assert res.status_code == 200
+    assert "無効" in captured[0][1]
 
 
 def test_reply_skips_when_token_placeholder():
