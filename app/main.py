@@ -16,6 +16,7 @@ import logging
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from linebot.v3 import WebhookParser
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -45,6 +46,30 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jci-agent")
 
 app = FastAPI(title="JCI SED Agent", version="0.0.1-m0")
+
+# /admin・/tasks は非公開。/line/webhook(署名検証)・/・/healthz のみ公開。
+PROTECTED_PREFIXES = ("/admin", "/tasks")
+
+
+def _is_authorized(request: Request) -> bool:
+    # IAP 経由（Cloud Run 前段で認証済み）
+    if request.headers.get("X-Goog-Authenticated-User-Email"):
+        return True
+    # 共有シークレット（Cloud Scheduler の OIDC が使えない経路や管理ツール向け）
+    secret = config.admin_api_secret()
+    if secret and request.headers.get("Authorization") == f"Bearer {secret}":
+        return True
+    return False
+
+
+@app.middleware("http")
+async def access_guard(request: Request, call_next):
+    path = request.url.path
+    if path.startswith(PROTECTED_PREFIXES) and not _is_authorized(request):
+        return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return await call_next(request)
+
+
 app.include_router(admin_router)
 
 WELCOME_TEXT = (
