@@ -123,6 +123,15 @@ def test_close_event_endpoint(repo):
     assert repo.get_event(eid).status.value == "closed"
 
 
+def test_seed_and_list_policies():
+    res = client.post("/admin/policies/seed")
+    assert res.status_code == 200
+    assert "rp_例会_default" in res.json()["seeded"]
+    listed = client.get("/admin/policies").json()
+    ids = {p["policy_id"] for p in listed}
+    assert "rp_例会_default" in ids and "rp_理事会_default" in ids
+
+
 def test_event_not_found():
     assert client.get("/admin/events/nope").status_code == 404
 
