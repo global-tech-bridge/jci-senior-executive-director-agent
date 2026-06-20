@@ -88,7 +88,7 @@ def test_webhook_follow_triggers_welcome(monkeypatch):
     assert "招待コード" in text
 
 
-def test_webhook_message_echo_for_linked_member(monkeypatch):
+def test_webhook_message_linked_member_gets_menu(monkeypatch):
     from app.models import Member
     from app.repository import InMemoryRepository
 
@@ -97,9 +97,11 @@ def test_webhook_message_echo_for_linked_member(monkeypatch):
     monkeypatch.setattr(main, "get_repo", lambda: repo)
 
     captured = []
-    monkeypatch.setattr(main, "reply", lambda token, text: captured.append((token, text)) or True)
+    monkeypatch.setattr(
+        main, "reply_messages", lambda token, msgs: captured.append((token, msgs)) or True
+    )
 
-    body = _event_envelope(MESSAGE_EVENT)
+    body = _event_envelope(MESSAGE_EVENT)  # text="こんにちは" → 未知入力→メニュー誘導
     res = client.post(
         "/line/webhook",
         content=body,
@@ -107,10 +109,9 @@ def test_webhook_message_echo_for_linked_member(monkeypatch):
     )
     assert res.status_code == 200
     assert len(captured) == 1
-    token, text = captured[0]
+    token, msgs = captured[0]
     assert token == "reply-token-msg"
-    assert "こんにちは" in text
-    assert "猪苗代 太郎" in text
+    assert msgs[0].quick_reply is not None  # メニュー(QuickReply)が返る
 
 
 def test_webhook_message_unlinked_user_treated_as_code(monkeypatch):
@@ -120,7 +121,9 @@ def test_webhook_message_unlinked_user_treated_as_code(monkeypatch):
     monkeypatch.setattr(main, "get_repo", lambda: repo)
 
     captured = []
-    monkeypatch.setattr(main, "reply", lambda token, text: captured.append((token, text)) or True)
+    monkeypatch.setattr(
+        main, "reply_messages", lambda token, msgs: captured.append((token, msgs)) or True
+    )
 
     body = _event_envelope(MESSAGE_EVENT)
     res = client.post(
@@ -129,7 +132,7 @@ def test_webhook_message_unlinked_user_treated_as_code(monkeypatch):
         headers={"X-Line-Signature": sign(body)},
     )
     assert res.status_code == 200
-    assert "無効" in captured[0][1]
+    assert "無効" in captured[0][1][0].text
 
 
 def test_reply_skips_when_token_placeholder():

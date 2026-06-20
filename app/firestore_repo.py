@@ -9,6 +9,7 @@ from .models import (
     Attendance,
     DeliveryJob,
     DeliveryLog,
+    Escalation,
     Event,
     EventStatus,
     InviteCode,
@@ -29,6 +30,7 @@ COL_POLICIES = "reminderPolicies"
 COL_SETTINGS = "settings"
 COL_JOBS = "deliveryJobs"
 COL_LOGS = "deliveryLogs"
+COL_ESCALATIONS = "escalations"
 SETTINGS_DOC = "global"
 
 
@@ -141,3 +143,15 @@ class FirestoreRepository:
         if job_id is not None:
             col = col.where("job_id", "==", job_id)
         return [DeliveryLog.model_validate(s.to_dict()) for s in col.stream()]
+
+    # --- escalations ---
+    def save_escalation(self, escalation: Escalation) -> None:
+        self._db.collection(COL_ESCALATIONS).document(escalation.escalation_id).set(
+            escalation.model_dump(mode="json")
+        )
+
+    def list_escalations(self, *, status: str | None = None) -> list[Escalation]:
+        col = self._db.collection(COL_ESCALATIONS)
+        if status is not None:
+            col = col.where("status", "==", status)
+        return [Escalation.model_validate(s.to_dict()) for s in col.stream()]
