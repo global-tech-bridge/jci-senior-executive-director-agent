@@ -6,8 +6,9 @@ from app import main
 from app.deps import set_repo
 from app.models import AttendanceStatus, Member
 from app.repository import InMemoryRepository
+from tests.conftest import ADMIN_AUTH
 
-client = TestClient(main.app)
+client = TestClient(main.app, headers=ADMIN_AUTH)
 
 
 @pytest.fixture(autouse=True)
@@ -124,3 +125,11 @@ def test_close_event_endpoint(repo):
 
 def test_event_not_found():
     assert client.get("/admin/events/nope").status_code == 404
+
+
+def test_admin_requires_auth():
+    noauth = TestClient(main.app)
+    assert noauth.get("/admin/events").status_code == 401
+    # 不正なシークレット
+    bad = TestClient(main.app, headers={"Authorization": "Bearer wrong"})
+    assert bad.get("/admin/members").status_code == 401

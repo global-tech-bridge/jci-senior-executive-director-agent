@@ -16,8 +16,9 @@ from app.models import (
 )
 from app.reminders import EXAMPLE_MEETING_POLICY
 from app.repository import InMemoryRepository
+from tests.conftest import ADMIN_AUTH
 
-client = TestClient(main.app)
+client = TestClient(main.app, headers=ADMIN_AUTH)
 DEADLINE = datetime(2026, 6, 25, 23, 59)
 
 
