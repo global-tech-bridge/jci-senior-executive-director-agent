@@ -21,14 +21,21 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     ApiClient,
     Configuration,
+    Message,
     MessagingApi,
     ReplyMessageRequest,
     TextMessage,
 )
-from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
+from linebot.v3.webhooks import (
+    FollowEvent,
+    MessageEvent,
+    PostbackEvent,
+    TextMessageContent,
+)
 
 from . import config
 from .invite import verify_and_link
+from .line_messages import apply_postback
 from .repository import Repository
 
 logging.basicConfig(level=logging.INFO)
@@ -66,21 +73,23 @@ def _access_token_ready(token: str | None) -> bool:
     return bool(token and token != "PLACEHOLDER_SET_ME")
 
 
-def reply(reply_token: str, text: str) -> bool:
-    """LINE へ返信。アクセストークン未設定時はスキップして False を返す。"""
+def reply_messages(reply_token: str, messages: list[Message]) -> bool:
+    """LINE へ任意のメッセージ列を返信。アクセストークン未設定時はスキップ。"""
     token = config.line_channel_access_token()
     if not _access_token_ready(token):
-        logger.warning("access token 未設定のため返信スキップ: %s", text)
+        logger.warning("access token 未設定のため返信スキップ (%d件)", len(messages))
         return False
     configuration = Configuration(access_token=token)
     with ApiClient(configuration) as api_client:
         MessagingApi(api_client).reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=text)],
-            )
+            ReplyMessageRequest(reply_token=reply_token, messages=messages)
         )
     return True
+
+
+def reply(reply_token: str, text: str) -> bool:
+    """テキスト1通を返信するショートカット。"""
+    return reply_messages(reply_token, [TextMessage(text=text)])
 
 
 @app.get("/")
@@ -121,8 +130,23 @@ def handle_event(event) -> None:
         text = event.message.text
         logger.info("message event: userId=%s text=%s", user_id, text)
         reply(event.reply_token, handle_text_message(user_id, text))
+    elif isinstance(event, PostbackEvent):
+        user_id = event.source.user_id
+        data = event.postback.data
+        logger.info("postback event: userId=%s data=%s", user_id, data)
+        messages = handle_postback(user_id, data)
+        reply_messages(event.reply_token, messages)
     else:
         logger.info("other event: %s", type(event).__name__)
+
+
+def handle_postback(user_id: str, data: str) -> list[Message]:
+    """postback（出欠ボタン等）を処理してメッセージ列を返す。"""
+    repo = get_repo()
+    member = repo.get_member_by_line_user_id(user_id)
+    if member is None:
+        return [TextMessage(text="先に招待コードで登録をお願いします。")]
+    return apply_postback(repo, member, data, now=datetime.now())
 
 
 @app.post("/line/webhook")
