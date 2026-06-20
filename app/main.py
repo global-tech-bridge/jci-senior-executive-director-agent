@@ -36,6 +36,7 @@ from linebot.v3.webhooks import (
 
 from . import config, line_push
 from .admin_api import router as admin_router
+from .dashboard import router as dashboard_router
 from .delivery import execute_delivery
 from .deps import get_repo
 from .invite import verify_and_link
@@ -73,6 +74,7 @@ async def access_guard(request: Request, call_next):
 
 
 app.include_router(admin_router)
+app.include_router(dashboard_router)
 
 WELCOME_TEXT = (
     "友だち追加ありがとうございます！\n"
