@@ -34,14 +34,16 @@ from linebot.v3.webhooks import (
 )
 
 from . import config
+from .admin_api import router as admin_router
+from .deps import get_repo
 from .invite import verify_and_link
 from .line_messages import apply_postback
-from .repository import Repository
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jci-agent")
 
 app = FastAPI(title="JCI SED Agent", version="0.0.1-m0")
+app.include_router(admin_router)
 
 WELCOME_TEXT = (
     "友だち追加ありがとうございます！\n"
@@ -54,19 +56,6 @@ def get_parser() -> WebhookParser | None:
     """channel secret から Webhook パーサを構築（未設定なら None）。"""
     secret = config.line_channel_secret()
     return WebhookParser(secret) if secret else None
-
-
-_repo: Repository | None = None
-
-
-def get_repo() -> Repository:
-    """リポジトリを取得（本番=Firestore）。テストでは monkeypatch する。"""
-    global _repo
-    if _repo is None:
-        from .firestore_repo import FirestoreRepository
-
-        _repo = FirestoreRepository(project=config.PROJECT_ID)
-    return _repo
 
 
 def _access_token_ready(token: str | None) -> bool:
