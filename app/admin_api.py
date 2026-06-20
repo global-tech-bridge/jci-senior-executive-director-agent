@@ -13,7 +13,9 @@ from datetime import datetime
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
 
+from . import line_push
 from .attendance import aggregate, record_attendance
+from .delivery import execute_delivery
 from .deps import get_repo
 from .events import resolve_targets
 from .invite import issue_invite
@@ -165,12 +167,22 @@ def close_event_endpoint(event_id: str):
     repo = get_repo()
     if not close_event(repo, event_id, now=datetime.now()):
         raise HTTPException(status_code=404, detail="event not found")
+    summary_text = build_summary_text(repo, event_id)
     job = plan_summary_notification(repo, event_id, now=datetime.now())
+
+    def sender(member_id: str) -> bool:
+        member = repo.get_member(member_id)
+        if member is None or not member.line_user_id:
+            return False
+        return line_push.push_text(member.line_user_id, summary_text)
+
+    report = execute_delivery(repo, job, summary_text, now=datetime.now(), sender=sender)
     return {
         "status": "closed",
-        "summary": build_summary_text(repo, event_id),
+        "summary": summary_text,
         "summary_job_id": job.job_id,
         "notify_targets": job.targets,
+        "notified": report.sent,
     }
 
 

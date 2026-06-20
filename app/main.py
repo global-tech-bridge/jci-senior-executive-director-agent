@@ -33,11 +33,13 @@ from linebot.v3.webhooks import (
     TextMessageContent,
 )
 
-from . import config
+from . import config, line_push
 from .admin_api import router as admin_router
+from .delivery import execute_delivery
 from .deps import get_repo
 from .invite import verify_and_link
-from .line_messages import apply_postback
+from .line_messages import apply_postback, build_attendance_request
+from .reminders import plan_reminders
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jci-agent")
@@ -136,6 +138,50 @@ def handle_postback(user_id: str, data: str) -> list[Message]:
     if member is None:
         return [TextMessage(text="先に招待コードで登録をお願いします。")]
     return apply_postback(repo, member, data, now=datetime.now())
+
+
+def _push_sender(repo, messages: list[Message]):
+    """member_id を LINE userId に解決して Push する sender を作る。"""
+
+    def sender(member_id: str) -> bool:
+        member = repo.get_member(member_id)
+        if member is None or not member.line_user_id:
+            return False
+        return line_push.push_messages(member.line_user_id, messages)
+
+    return sender
+
+
+@app.post("/tasks/tick")
+def tasks_tick():
+    """Cloud Scheduler から定期起動。締切到来ステージの催促を発火する。
+
+    ※ Cloud Run の IAM 認証（Scheduler の OIDC 呼び出し）で保護する前提。公開しない。
+    """
+    repo = get_repo()
+    now = datetime.now()
+    jobs = plan_reminders(repo, now)
+    results = []
+    for job in jobs:
+        event = repo.get_event(job.event_id)
+        if event is None:
+            continue
+        message = build_attendance_request(event)
+        report = execute_delivery(
+            repo, job, message.text, now=now, sender=_push_sender(repo, [message])
+        )
+        results.append(
+            {
+                "job_id": job.job_id,
+                "stage": job.stage,
+                "sent": report.sent,
+                "blocked": report.blocked,
+                "deferred": report.deferred,
+                "failed": report.failed,
+                "halted": report.halted,
+            }
+        )
+    return {"planned": len(jobs), "results": results}
 
 
 @app.post("/line/webhook")
