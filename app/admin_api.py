@@ -29,6 +29,7 @@ from .models import (
     TargetScope,
 )
 from .reminders import resolve_audience, stage_job_id
+from .summary import build_summary_text, close_event, plan_summary_notification
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -148,6 +149,29 @@ def manual_remind(event_id: str, audience: str = "unanswered"):
     )
     repo.save_delivery_job(job)
     return {"job_id": job.job_id, "targets": targets}
+
+
+@router.get("/events/{event_id}/summary")
+def event_summary(event_id: str):
+    repo = get_repo()
+    if repo.get_event(event_id) is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return {"text": build_summary_text(repo, event_id)}
+
+
+@router.post("/events/{event_id}/close")
+def close_event_endpoint(event_id: str):
+    """イベントをクローズし、五役向けサマリ通知ジョブを作成する。"""
+    repo = get_repo()
+    if not close_event(repo, event_id, now=datetime.now()):
+        raise HTTPException(status_code=404, detail="event not found")
+    job = plan_summary_notification(repo, event_id, now=datetime.now())
+    return {
+        "status": "closed",
+        "summary": build_summary_text(repo, event_id),
+        "summary_job_id": job.job_id,
+        "notify_targets": job.targets,
+    }
 
 
 # --------------------------------------------------------------------------- #

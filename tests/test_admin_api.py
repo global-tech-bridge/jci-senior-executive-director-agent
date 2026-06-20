@@ -101,5 +101,26 @@ def test_members_and_invite():
     assert client.post("/admin/members/zzz/invite").status_code == 404
 
 
+def test_event_summary_endpoint():
+    ev = create_event()
+    eid = ev["event_id"]
+    client.put(f"/admin/events/{eid}/attendances/m1", json={"status": "出席"})
+    res = client.get(f"/admin/events/{eid}/summary")
+    assert res.status_code == 200
+    assert "6月例会" in res.json()["text"]
+
+
+def test_close_event_endpoint(repo):
+    ev = create_event()
+    eid = ev["event_id"]
+    res = client.post(f"/admin/events/{eid}/close")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "closed"
+    assert "summary_job_id" in body
+    # クローズ後は status=closed
+    assert repo.get_event(eid).status.value == "closed"
+
+
 def test_event_not_found():
     assert client.get("/admin/events/nope").status_code == 404
