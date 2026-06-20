@@ -12,6 +12,7 @@ from .models import (
     Attendance,
     DeliveryJob,
     DeliveryLog,
+    Escalation,
     Event,
     EventStatus,
     InviteCode,
@@ -60,6 +61,10 @@ class Repository(Protocol):
     def save_delivery_log(self, log: DeliveryLog) -> None: ...
     def list_delivery_logs(self, *, job_id: str | None = None) -> list[DeliveryLog]: ...
 
+    # --- escalations ---
+    def save_escalation(self, escalation: Escalation) -> None: ...
+    def list_escalations(self, *, status: str | None = None) -> list[Escalation]: ...
+
 
 class InMemoryRepository:
     """テスト・ローカル用のインメモリ実装。"""
@@ -74,6 +79,7 @@ class InMemoryRepository:
         self._settings: Settings = Settings()
         self._jobs: dict[str, DeliveryJob] = {}
         self._logs: list[DeliveryLog] = []
+        self._escalations: dict[str, Escalation] = {}
 
     # --- members ---
     def upsert_member(self, member: Member) -> None:
@@ -170,6 +176,16 @@ class InMemoryRepository:
         if job_id is not None:
             logs = [log for log in logs if log.job_id == job_id]
         return [log.model_copy(deep=True) for log in logs]
+
+    # --- escalations ---
+    def save_escalation(self, escalation: Escalation) -> None:
+        self._escalations[escalation.escalation_id] = escalation.model_copy(deep=True)
+
+    def list_escalations(self, *, status: str | None = None) -> list[Escalation]:
+        items = list(self._escalations.values())
+        if status is not None:
+            items = [e for e in items if e.status == status]
+        return [e.model_copy(deep=True) for e in items]
 
 
 def utcnow() -> datetime:

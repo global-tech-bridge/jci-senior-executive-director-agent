@@ -244,3 +244,14 @@ class DeliveryLog(BaseModel):
     result: DeliveryResult
     reason: str | None = None
     sent_at: datetime
+
+
+class Escalation(BaseModel):
+    """メンバーからの事務局への取次依頼（docs/mvp-design.md §4.3 F8-3）。"""
+
+    escalation_id: str
+    member_id: str
+    kind: str = "contact"  # contact | question | other
+    text: str | None = None
+    created_at: datetime
+    status: str = "open"  # open | handled

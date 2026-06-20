@@ -40,6 +40,7 @@ from .delivery import execute_delivery
 from .deps import get_repo
 from .invite import verify_and_link
 from .line_messages import apply_postback, build_attendance_request
+from .member_menu import handle_member_text
 from .reminders import plan_reminders
 
 logging.basicConfig(level=logging.INFO)
@@ -123,18 +124,18 @@ def healthz():
     }
 
 
-def handle_text_message(user_id: str, text: str) -> str:
-    """テキストメッセージへの応答文を生成。
+def handle_text_message(user_id: str, text: str) -> list[Message]:
+    """テキストメッセージへの応答メッセージ列を生成。
 
-    未連携ユーザーからのメッセージは招待コードとして照合し本人確認を行う。
-    連携済みユーザーへの応答は後続マイルストーン（出欠等）で拡張する。
+    未連携ユーザーは招待コードとして照合し本人確認を行う。
+    連携済みユーザーはメニュー応答（次回予定・出欠・連絡）に委譲する。
     """
     repo = get_repo()
     member = repo.get_member_by_line_user_id(user_id)
     if member is None:
         result = verify_and_link(repo, user_id, text, now=datetime.now())
-        return result.message
-    return f"{member.name}さん、受信しました（疎通確認）: {text}"
+        return [TextMessage(text=result.message)]
+    return handle_member_text(repo, member, text, now=datetime.now())
 
 
 def handle_event(event) -> None:
@@ -146,7 +147,7 @@ def handle_event(event) -> None:
         user_id = event.source.user_id
         text = event.message.text
         logger.info("message event: userId=%s text=%s", user_id, text)
-        reply(event.reply_token, handle_text_message(user_id, text))
+        reply_messages(event.reply_token, handle_text_message(user_id, text))
     elif isinstance(event, PostbackEvent):
         user_id = event.source.user_id
         data = event.postback.data
@@ -158,11 +159,13 @@ def handle_event(event) -> None:
 
 
 def handle_postback(user_id: str, data: str) -> list[Message]:
-    """postback（出欠ボタン等）を処理してメッセージ列を返す。"""
+    """postback（出欠ボタン・メニュー）を処理してメッセージ列を返す。"""
     repo = get_repo()
     member = repo.get_member_by_line_user_id(user_id)
     if member is None:
         return [TextMessage(text="先に招待コードで登録をお願いします。")]
+    if data.startswith("menu|"):
+        return handle_member_text(repo, member, data, now=datetime.now())
     return apply_postback(repo, member, data, now=datetime.now())
 
 
