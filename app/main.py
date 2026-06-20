@@ -55,9 +55,10 @@ def _is_authorized(request: Request) -> bool:
     # IAP 経由（Cloud Run 前段で認証済み）
     if request.headers.get("X-Goog-Authenticated-User-Email"):
         return True
-    # 共有シークレット（Cloud Scheduler の OIDC が使えない経路や管理ツール向け）
+    # 共有シークレット。Cloud Run は Authorization: Bearer を IAM 認証として横取りする
+    # ため、独自ヘッダ X-Admin-Token を用いる（Cloud Scheduler/管理ツール向け）。
     secret = config.admin_api_secret()
-    if secret and request.headers.get("Authorization") == f"Bearer {secret}":
+    if secret and request.headers.get("X-Admin-Token") == secret:
         return True
     return False
 
