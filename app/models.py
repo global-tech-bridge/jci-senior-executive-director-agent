@@ -95,8 +95,12 @@ class Contact(BaseModel):
     mobile: str | None = None
     email: str | None = None
     home_tel: str | None = None
+    home_address: str | None = None
+    postal_code: str | None = None
     work: str | None = None
+    work_title: str | None = None  # 勤務先での役職（JCの役職ではない）
     work_tel: str | None = None
+    fax: str | None = None
 
 
 class Secondment(BaseModel):
@@ -123,6 +127,7 @@ class Member(BaseModel):
     lom_id: str = "inawashiro"
     name: str
     kana: str | None = None
+    birthday: str | None = None  # 生年月日（和暦表記をそのまま保持: 例 "H3.11.15"）
     member_type: MemberType = MemberType.regular
     status: MemberStatus = MemberStatus.active
     committee: str | None = None
