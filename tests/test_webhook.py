@@ -51,14 +51,18 @@ def test_root():
     assert res.json()["service"] == "jci-sed-agent"
 
 
-def test_healthz():
-    res = client.get("/healthz")
+def test_health():
+    res = client.get("/health")
     assert res.status_code == 200
     body = res.json()
     assert body["ok"] is True
     assert body["channel_secret_loaded"] is True
     # conftest はトークンを PLACEHOLDER にしているため未ロード扱い
     assert body["access_token_loaded"] is False
+
+
+def test_healthz_still_works():
+    assert client.get("/healthz").status_code == 200
 
 
 def test_webhook_rejects_invalid_signature():
