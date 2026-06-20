@@ -15,6 +15,7 @@ from .models import (
     Event,
     EventStatus,
     InviteCode,
+    LinkState,
     Member,
     MemberStatus,
     ReminderPolicy,
@@ -32,6 +33,10 @@ class Repository(Protocol):
     # --- invite codes ---
     def save_invite_code(self, code: InviteCode) -> None: ...
     def get_invite_code(self, code: str) -> InviteCode | None: ...
+
+    # --- link state ---
+    def get_link_state(self, line_user_id: str) -> LinkState | None: ...
+    def save_link_state(self, state: LinkState) -> None: ...
 
     # --- events ---
     def upsert_event(self, event: Event) -> None: ...
@@ -62,6 +67,7 @@ class InMemoryRepository:
     def __init__(self) -> None:
         self._members: dict[str, Member] = {}
         self._invite_codes: dict[str, InviteCode] = {}
+        self._link_states: dict[str, LinkState] = {}
         self._events: dict[str, Event] = {}
         self._attendances: dict[str, Attendance] = {}
         self._policies: dict[str, ReminderPolicy] = {}
@@ -96,6 +102,14 @@ class InMemoryRepository:
     def get_invite_code(self, code: str) -> InviteCode | None:
         c = self._invite_codes.get(code)
         return c.model_copy(deep=True) if c else None
+
+    # --- link state ---
+    def get_link_state(self, line_user_id: str) -> LinkState | None:
+        s = self._link_states.get(line_user_id)
+        return s.model_copy(deep=True) if s else None
+
+    def save_link_state(self, state: LinkState) -> None:
+        self._link_states[state.line_user_id] = state.model_copy(deep=True)
 
     # --- events ---
     def upsert_event(self, event: Event) -> None:

@@ -12,6 +12,7 @@ from .models import (
     Event,
     EventStatus,
     InviteCode,
+    LinkState,
     Member,
     MemberStatus,
     ReminderPolicy,
@@ -21,6 +22,7 @@ from .models import (
 # コレクション名
 COL_MEMBERS = "members"
 COL_INVITE_CODES = "inviteCodes"
+COL_LINK_STATES = "linkStates"
 COL_EVENTS = "events"
 COL_ATTENDANCES = "attendances"
 COL_POLICIES = "reminderPolicies"
@@ -67,6 +69,16 @@ class FirestoreRepository:
     def get_invite_code(self, code: str) -> InviteCode | None:
         snap = self._db.collection(COL_INVITE_CODES).document(code).get()
         return InviteCode.model_validate(snap.to_dict()) if snap.exists else None
+
+    # --- link state ---
+    def get_link_state(self, line_user_id: str) -> LinkState | None:
+        snap = self._db.collection(COL_LINK_STATES).document(line_user_id).get()
+        return LinkState.model_validate(snap.to_dict()) if snap.exists else None
+
+    def save_link_state(self, state: LinkState) -> None:
+        self._db.collection(COL_LINK_STATES).document(state.line_user_id).set(
+            state.model_dump(mode="json")
+        )
 
     # --- events ---
     def upsert_event(self, event: Event) -> None:

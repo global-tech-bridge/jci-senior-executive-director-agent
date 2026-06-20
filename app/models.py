@@ -153,6 +153,12 @@ class InviteCode(BaseModel):
     member_id: str
     expires_at: datetime
     used_at: datetime | None = None
+
+
+class LinkState(BaseModel):
+    """LINEユーザー単位の本人確認試行状態（総当たり対策）。"""
+
+    line_user_id: str
     failed_attempts: int = 0
     locked: bool = False
 
