@@ -30,7 +30,7 @@ from .models import (
     Settings,
     TargetScope,
 )
-from .reminders import resolve_audience, stage_job_id
+from .reminders import default_policies, resolve_audience, stage_job_id
 from .summary import build_summary_text, close_event, plan_summary_notification
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -184,6 +184,27 @@ def close_event_endpoint(event_id: str):
         "notify_targets": job.targets,
         "notified": report.sent,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 催促ポリシー
+# --------------------------------------------------------------------------- #
+@router.get("/policies")
+def list_policies():
+    repo = get_repo()
+    found = (repo.get_policy(p.policy_id) for p in default_policies())
+    return [p for p in found if p is not None]
+
+
+@router.post("/policies/seed")
+def seed_policies():
+    """既定の催促ポリシー(例会/理事会)をFirestoreに投入する。"""
+    repo = get_repo()
+    seeded = []
+    for policy in default_policies():
+        repo.upsert_policy(policy)
+        seeded.append(policy.policy_id)
+    return {"seeded": seeded}
 
 
 # --------------------------------------------------------------------------- #
