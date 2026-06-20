@@ -115,13 +115,24 @@ def root():
     return {"service": "jci-sed-agent", "stage": "M0", "status": "ok"}
 
 
-@app.get("/healthz")
-def healthz():
+def _health_payload():
     return {
         "ok": True,
         "channel_secret_loaded": bool(config.line_channel_secret()),
         "access_token_loaded": _access_token_ready(config.line_channel_access_token()),
     }
+
+
+# /healthz は Cloud Run 前段の Google Front End に横取りされる(Google 404 を返す)ため、
+# 実用のヘルスチェックは /health を使う。/healthz は後方互換で残す。
+@app.get("/health")
+def health():
+    return _health_payload()
+
+
+@app.get("/healthz")
+def healthz():
+    return _health_payload()
 
 
 def handle_text_message(user_id: str, text: str) -> list[Message]:
