@@ -1,0 +1,187 @@
+"""管理API（最小実装, docs/mvp-design.md §8）。
+
+役員向けの管理操作。認証は IAP（Cloud Run 前段）で行う前提で、本コードは
+``X-Goog-Authenticated-User-Email`` を監査用 actor として読むのみ。
+"""
+from __future__ import annotations
+
+import csv
+import io
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Header, HTTPException, Response
+from pydantic import BaseModel
+
+from .attendance import aggregate, record_attendance
+from .deps import get_repo
+from .events import resolve_targets
+from .invite import issue_invite
+from .models import (
+    AttendanceStatus,
+    DeliveryJob,
+    DeliveryStatus,
+    Event,
+    EventStatus,
+    EventType,
+    Member,
+    Settings,
+    TargetScope,
+)
+from .reminders import resolve_audience, stage_job_id
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def _actor(email: str | None) -> str:
+    return email or "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# イベント
+# --------------------------------------------------------------------------- #
+class EventCreate(BaseModel):
+    type: EventType
+    title: str
+    datetime_start: datetime
+    datetime_end: datetime | None = None
+    location: str | None = None
+    target_scope: TargetScope = TargetScope()
+    attendance_deadline: datetime | None = None
+    reminder_policy_id: str | None = None
+    status: EventStatus = EventStatus.open
+
+
+@router.post("/events")
+def create_event(payload: EventCreate):
+    repo = get_repo()
+    event = Event(event_id=f"ev_{uuid.uuid4().hex[:10]}", **payload.model_dump())
+    repo.upsert_event(event)
+    return event
+
+
+@router.get("/events")
+def list_events(status: EventStatus | None = None):
+    return get_repo().list_events(status=status)
+
+
+@router.get("/events/{event_id}")
+def get_event(event_id: str):
+    event = get_repo().get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return {"event": event, "summary": aggregate(get_repo(), event_id)}
+
+
+# --------------------------------------------------------------------------- #
+# 出欠
+# --------------------------------------------------------------------------- #
+class AttendanceUpdate(BaseModel):
+    status: AttendanceStatus
+
+
+@router.get("/events/{event_id}/attendances")
+def list_attendances(event_id: str):
+    repo = get_repo()
+    if repo.get_event(event_id) is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return {
+        "attendances": repo.list_attendances(event_id),
+        "summary": aggregate(repo, event_id),
+    }
+
+
+@router.put("/events/{event_id}/attendances/{member_id}")
+def update_attendance(
+    event_id: str,
+    member_id: str,
+    payload: AttendanceUpdate,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    repo = get_repo()
+    if repo.get_event(event_id) is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    att = record_attendance(repo, event_id, member_id, payload.status, now=datetime.now())
+    return att
+
+
+@router.get("/events/{event_id}/attendances.csv")
+def export_attendances_csv(event_id: str):
+    repo = get_repo()
+    event = repo.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    by_member = {a.member_id: a for a in repo.list_attendances(event_id)}
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["member_id", "name", "committee", "status", "late_leave", "absence_reasons"])
+    for m in resolve_targets(repo, event):
+        att = by_member.get(m.member_id)
+        status = att.status.value if att else AttendanceStatus.未回答.value
+        writer.writerow([
+            m.member_id,
+            m.name,
+            m.committee or "",
+            status,
+            (att.late_leave.value if att and att.late_leave else ""),
+            ",".join(r.value for r in att.absence_reasons) if att else "",
+        ])
+    return Response(content=buf.getvalue(), media_type="text/csv")
+
+
+@router.post("/events/{event_id}/remind")
+def manual_remind(event_id: str, audience: str = "unanswered"):
+    """未回答者(既定)へ手動催促ジョブを作成。実送信は worker/Tasks 経由。"""
+    repo = get_repo()
+    event = repo.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    targets = resolve_audience(repo, event, audience)
+    job = DeliveryJob(
+        job_id=stage_job_id(event_id, f"manual_{uuid.uuid4().hex[:6]}"),
+        type="reminder",
+        event_id=event_id,
+        stage="manual",
+        targets=targets,
+        scheduled_at=datetime.now(),
+        status=DeliveryStatus.queued,
+    )
+    repo.save_delivery_job(job)
+    return {"job_id": job.job_id, "targets": targets}
+
+
+# --------------------------------------------------------------------------- #
+# 設定
+# --------------------------------------------------------------------------- #
+@router.get("/settings")
+def get_settings():
+    return get_repo().get_settings()
+
+
+@router.put("/settings")
+def put_settings(settings: Settings):
+    get_repo().save_settings(settings)
+    return settings
+
+
+# --------------------------------------------------------------------------- #
+# 名簿・招待コード
+# --------------------------------------------------------------------------- #
+@router.get("/members")
+def list_members(active_only: bool = False):
+    return get_repo().list_members(active_only=active_only)
+
+
+@router.post("/members")
+def upsert_member(member: Member):
+    get_repo().upsert_member(member)
+    return member
+
+
+@router.post("/members/{member_id}/invite")
+def create_invite(member_id: str):
+    repo = get_repo()
+    if repo.get_member(member_id) is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    invite = issue_invite(repo, member_id, now=datetime.now())
+    return invite
