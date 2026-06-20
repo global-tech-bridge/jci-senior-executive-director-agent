@@ -1,0 +1,131 @@
+"""Firestore 実装の Repository。
+
+Repository プロトコルを満たす。ライブ接続を伴うため CI ではテストせず、
+インターフェースの整合とシリアライズ往復のみを担保する設計。
+"""
+from __future__ import annotations
+
+from .models import (
+    Attendance,
+    DeliveryJob,
+    DeliveryLog,
+    Event,
+    EventStatus,
+    InviteCode,
+    Member,
+    MemberStatus,
+    ReminderPolicy,
+    Settings,
+)
+
+# コレクション名
+COL_MEMBERS = "members"
+COL_INVITE_CODES = "inviteCodes"
+COL_EVENTS = "events"
+COL_ATTENDANCES = "attendances"
+COL_POLICIES = "reminderPolicies"
+COL_SETTINGS = "settings"
+COL_JOBS = "deliveryJobs"
+COL_LOGS = "deliveryLogs"
+SETTINGS_DOC = "global"
+
+
+class FirestoreRepository:
+    def __init__(self, client=None, project: str | None = None) -> None:
+        if client is None:
+            from google.cloud import firestore  # 遅延 import（テスト時の依存回避）
+
+            client = firestore.Client(project=project)
+        self._db = client
+
+    # --- members ---
+    def upsert_member(self, member: Member) -> None:
+        self._db.collection(COL_MEMBERS).document(member.member_id).set(
+            member.model_dump(mode="json")
+        )
+
+    def get_member(self, member_id: str) -> Member | None:
+        snap = self._db.collection(COL_MEMBERS).document(member_id).get()
+        return Member.model_validate(snap.to_dict()) if snap.exists else None
+
+    def get_member_by_line_user_id(self, line_user_id: str) -> Member | None:
+        query = self._db.collection(COL_MEMBERS).where("line_user_id", "==", line_user_id).limit(1)
+        for snap in query.stream():
+            return Member.model_validate(snap.to_dict())
+        return None
+
+    def list_members(self, *, active_only: bool = False) -> list[Member]:
+        col = self._db.collection(COL_MEMBERS)
+        if active_only:
+            col = col.where("status", "==", MemberStatus.active.value)
+        return [Member.model_validate(s.to_dict()) for s in col.stream()]
+
+    # --- invite codes ---
+    def save_invite_code(self, code: InviteCode) -> None:
+        self._db.collection(COL_INVITE_CODES).document(code.code).set(code.model_dump(mode="json"))
+
+    def get_invite_code(self, code: str) -> InviteCode | None:
+        snap = self._db.collection(COL_INVITE_CODES).document(code).get()
+        return InviteCode.model_validate(snap.to_dict()) if snap.exists else None
+
+    # --- events ---
+    def upsert_event(self, event: Event) -> None:
+        self._db.collection(COL_EVENTS).document(event.event_id).set(event.model_dump(mode="json"))
+
+    def get_event(self, event_id: str) -> Event | None:
+        snap = self._db.collection(COL_EVENTS).document(event_id).get()
+        return Event.model_validate(snap.to_dict()) if snap.exists else None
+
+    def list_events(self, *, status: EventStatus | None = None) -> list[Event]:
+        col = self._db.collection(COL_EVENTS)
+        if status is not None:
+            col = col.where("status", "==", status.value)
+        return [Event.model_validate(s.to_dict()) for s in col.stream()]
+
+    # --- attendances ---
+    def upsert_attendance(self, attendance: Attendance) -> None:
+        self._db.collection(COL_ATTENDANCES).document(attendance.doc_id).set(
+            attendance.model_dump(mode="json")
+        )
+
+    def get_attendance(self, event_id: str, member_id: str) -> Attendance | None:
+        snap = self._db.collection(COL_ATTENDANCES).document(f"{event_id}_{member_id}").get()
+        return Attendance.model_validate(snap.to_dict()) if snap.exists else None
+
+    def list_attendances(self, event_id: str) -> list[Attendance]:
+        query = self._db.collection(COL_ATTENDANCES).where("event_id", "==", event_id)
+        return [Attendance.model_validate(s.to_dict()) for s in query.stream()]
+
+    # --- policies / settings ---
+    def upsert_policy(self, policy: ReminderPolicy) -> None:
+        self._db.collection(COL_POLICIES).document(policy.policy_id).set(
+            policy.model_dump(mode="json")
+        )
+
+    def get_policy(self, policy_id: str) -> ReminderPolicy | None:
+        snap = self._db.collection(COL_POLICIES).document(policy_id).get()
+        return ReminderPolicy.model_validate(snap.to_dict()) if snap.exists else None
+
+    def get_settings(self) -> Settings:
+        snap = self._db.collection(COL_SETTINGS).document(SETTINGS_DOC).get()
+        return Settings.model_validate(snap.to_dict()) if snap.exists else Settings()
+
+    def save_settings(self, settings: Settings) -> None:
+        self._db.collection(COL_SETTINGS).document(SETTINGS_DOC).set(settings.model_dump(mode="json"))
+
+    # --- delivery ---
+    def save_delivery_job(self, job: DeliveryJob) -> None:
+        self._db.collection(COL_JOBS).document(job.job_id).set(job.model_dump(mode="json"))
+
+    def get_delivery_job(self, job_id: str) -> DeliveryJob | None:
+        snap = self._db.collection(COL_JOBS).document(job_id).get()
+        return DeliveryJob.model_validate(snap.to_dict()) if snap.exists else None
+
+    def save_delivery_log(self, log: DeliveryLog) -> None:
+        self._db.collection(COL_LOGS).document(log.log_id).set(log.model_dump(mode="json"))
+
+    def list_delivery_logs(self, *, job_id: str | None = None) -> list[DeliveryLog]:
+        col = self._db.collection(COL_LOGS)
+        if job_id is not None:
+            col = col.where("job_id", "==", job_id)
+        return [DeliveryLog.model_validate(s.to_dict()) for s in col.stream()]

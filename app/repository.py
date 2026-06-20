@@ -1,0 +1,163 @@
+"""リポジトリ抽象とインメモリ実装。
+
+本番は FirestoreRepository（app/firestore_repo.py）を使用し、
+テストは InMemoryRepository を使う。両者は Repository プロトコルを満たす。
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Protocol
+
+from .models import (
+    Attendance,
+    DeliveryJob,
+    DeliveryLog,
+    Event,
+    EventStatus,
+    InviteCode,
+    Member,
+    MemberStatus,
+    ReminderPolicy,
+    Settings,
+)
+
+
+class Repository(Protocol):
+    # --- members ---
+    def upsert_member(self, member: Member) -> None: ...
+    def get_member(self, member_id: str) -> Member | None: ...
+    def get_member_by_line_user_id(self, line_user_id: str) -> Member | None: ...
+    def list_members(self, *, active_only: bool = False) -> list[Member]: ...
+
+    # --- invite codes ---
+    def save_invite_code(self, code: InviteCode) -> None: ...
+    def get_invite_code(self, code: str) -> InviteCode | None: ...
+
+    # --- events ---
+    def upsert_event(self, event: Event) -> None: ...
+    def get_event(self, event_id: str) -> Event | None: ...
+    def list_events(self, *, status: EventStatus | None = None) -> list[Event]: ...
+
+    # --- attendances ---
+    def upsert_attendance(self, attendance: Attendance) -> None: ...
+    def get_attendance(self, event_id: str, member_id: str) -> Attendance | None: ...
+    def list_attendances(self, event_id: str) -> list[Attendance]: ...
+
+    # --- policies / settings ---
+    def upsert_policy(self, policy: ReminderPolicy) -> None: ...
+    def get_policy(self, policy_id: str) -> ReminderPolicy | None: ...
+    def get_settings(self) -> Settings: ...
+    def save_settings(self, settings: Settings) -> None: ...
+
+    # --- delivery ---
+    def save_delivery_job(self, job: DeliveryJob) -> None: ...
+    def get_delivery_job(self, job_id: str) -> DeliveryJob | None: ...
+    def save_delivery_log(self, log: DeliveryLog) -> None: ...
+    def list_delivery_logs(self, *, job_id: str | None = None) -> list[DeliveryLog]: ...
+
+
+class InMemoryRepository:
+    """テスト・ローカル用のインメモリ実装。"""
+
+    def __init__(self) -> None:
+        self._members: dict[str, Member] = {}
+        self._invite_codes: dict[str, InviteCode] = {}
+        self._events: dict[str, Event] = {}
+        self._attendances: dict[str, Attendance] = {}
+        self._policies: dict[str, ReminderPolicy] = {}
+        self._settings: Settings = Settings()
+        self._jobs: dict[str, DeliveryJob] = {}
+        self._logs: list[DeliveryLog] = []
+
+    # --- members ---
+    def upsert_member(self, member: Member) -> None:
+        self._members[member.member_id] = member.model_copy(deep=True)
+
+    def get_member(self, member_id: str) -> Member | None:
+        m = self._members.get(member_id)
+        return m.model_copy(deep=True) if m else None
+
+    def get_member_by_line_user_id(self, line_user_id: str) -> Member | None:
+        for m in self._members.values():
+            if m.line_user_id == line_user_id:
+                return m.model_copy(deep=True)
+        return None
+
+    def list_members(self, *, active_only: bool = False) -> list[Member]:
+        members = list(self._members.values())
+        if active_only:
+            members = [m for m in members if m.status == MemberStatus.active]
+        return [m.model_copy(deep=True) for m in members]
+
+    # --- invite codes ---
+    def save_invite_code(self, code: InviteCode) -> None:
+        self._invite_codes[code.code] = code.model_copy(deep=True)
+
+    def get_invite_code(self, code: str) -> InviteCode | None:
+        c = self._invite_codes.get(code)
+        return c.model_copy(deep=True) if c else None
+
+    # --- events ---
+    def upsert_event(self, event: Event) -> None:
+        self._events[event.event_id] = event.model_copy(deep=True)
+
+    def get_event(self, event_id: str) -> Event | None:
+        e = self._events.get(event_id)
+        return e.model_copy(deep=True) if e else None
+
+    def list_events(self, *, status: EventStatus | None = None) -> list[Event]:
+        events = list(self._events.values())
+        if status is not None:
+            events = [e for e in events if e.status == status]
+        return [e.model_copy(deep=True) for e in events]
+
+    # --- attendances ---
+    def upsert_attendance(self, attendance: Attendance) -> None:
+        self._attendances[attendance.doc_id] = attendance.model_copy(deep=True)
+
+    def get_attendance(self, event_id: str, member_id: str) -> Attendance | None:
+        a = self._attendances.get(f"{event_id}_{member_id}")
+        return a.model_copy(deep=True) if a else None
+
+    def list_attendances(self, event_id: str) -> list[Attendance]:
+        return [
+            a.model_copy(deep=True)
+            for a in self._attendances.values()
+            if a.event_id == event_id
+        ]
+
+    # --- policies / settings ---
+    def upsert_policy(self, policy: ReminderPolicy) -> None:
+        self._policies[policy.policy_id] = policy.model_copy(deep=True)
+
+    def get_policy(self, policy_id: str) -> ReminderPolicy | None:
+        p = self._policies.get(policy_id)
+        return p.model_copy(deep=True) if p else None
+
+    def get_settings(self) -> Settings:
+        return self._settings.model_copy(deep=True)
+
+    def save_settings(self, settings: Settings) -> None:
+        self._settings = settings.model_copy(deep=True)
+
+    # --- delivery ---
+    def save_delivery_job(self, job: DeliveryJob) -> None:
+        self._jobs[job.job_id] = job.model_copy(deep=True)
+
+    def get_delivery_job(self, job_id: str) -> DeliveryJob | None:
+        j = self._jobs.get(job_id)
+        return j.model_copy(deep=True) if j else None
+
+    def save_delivery_log(self, log: DeliveryLog) -> None:
+        self._logs.append(log.model_copy(deep=True))
+
+    def list_delivery_logs(self, *, job_id: str | None = None) -> list[DeliveryLog]:
+        logs = self._logs
+        if job_id is not None:
+            logs = [log for log in logs if log.job_id == job_id]
+        return [log.model_copy(deep=True) for log in logs]
+
+
+def utcnow() -> datetime:
+    """テストで monkeypatch しやすいよう集約した現在時刻取得。"""
+    return datetime.now()
