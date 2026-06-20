@@ -131,5 +131,5 @@ def test_admin_requires_auth():
     noauth = TestClient(main.app)
     assert noauth.get("/admin/events").status_code == 401
     # 不正なシークレット
-    bad = TestClient(main.app, headers={"Authorization": "Bearer wrong"})
+    bad = TestClient(main.app, headers={"X-Admin-Token": "wrong"})
     assert bad.get("/admin/members").status_code == 401

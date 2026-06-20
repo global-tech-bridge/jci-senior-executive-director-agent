@@ -11,4 +11,4 @@ os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 os.environ.setdefault("ADMIN_API_SECRET", "test-admin-secret")
 
 TEST_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
-ADMIN_AUTH = {"Authorization": f"Bearer {os.environ['ADMIN_API_SECRET']}"}
+ADMIN_AUTH = {"X-Admin-Token": os.environ["ADMIN_API_SECRET"]}
