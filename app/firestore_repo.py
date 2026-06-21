@@ -17,6 +17,7 @@ from .models import (
     LinkState,
     Member,
     MemberStatus,
+    Proposal,
     ReminderPolicy,
     Settings,
 )
@@ -33,6 +34,7 @@ COL_JOBS = "deliveryJobs"
 COL_LOGS = "deliveryLogs"
 COL_ESCALATIONS = "escalations"
 COL_AUDIT = "auditLogs"
+COL_PROPOSALS = "proposals"
 SETTINGS_DOC = "global"
 
 
@@ -177,3 +179,19 @@ class FirestoreRepository:
             .limit(limit)
         )
         return [AuditLog.model_validate(s.to_dict()) for s in col.stream()]
+
+    # --- proposals ---
+    def upsert_proposal(self, proposal: Proposal) -> None:
+        self._db.collection(COL_PROPOSALS).document(proposal.proposal_id).set(
+            proposal.model_dump(mode="json")
+        )
+
+    def get_proposal(self, proposal_id: str) -> Proposal | None:
+        snap = self._db.collection(COL_PROPOSALS).document(proposal_id).get()
+        return Proposal.model_validate(snap.to_dict()) if snap.exists else None
+
+    def list_proposals(self, *, status: str | None = None) -> list[Proposal]:
+        col = self._db.collection(COL_PROPOSALS)
+        if status is not None:
+            col = col.where("status", "==", status)
+        return [Proposal.model_validate(s.to_dict()) for s in col.stream()]
