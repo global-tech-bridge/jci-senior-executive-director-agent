@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from .audit import write_audit
 from .deps import get_repo
 from .format_check import run_format_check
+from .llm import review_proposal
 from .models import (
     Proposal,
     ProposalDeadlines,
@@ -109,6 +110,31 @@ def format_check(proposal_id: str):
     p.format_check = result
     repo.upsert_proposal(p)
     return result
+
+
+@router.post("/proposals/{proposal_id}/llm-review")
+def llm_review(
+    proposal_id: str,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    repo = get_repo()
+    p = repo.get_proposal(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    review = review_proposal(p.content or "")
+    if review is None:
+        raise HTTPException(
+            status_code=503,
+            detail="LLMレビューを生成できませんでした（本文が空、またはLLM未設定/失敗）。",
+        )
+    review.reviewed_at = datetime.now()
+    p.llm_review = review
+    repo.upsert_proposal(p)
+    write_audit(
+        repo, actor=_actor(x_goog_authenticated_user_email),
+        action="proposal.llm_review", target=proposal_id,
+    )
+    return review
 
 
 class StageUpdate(BaseModel):
