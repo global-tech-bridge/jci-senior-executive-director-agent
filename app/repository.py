@@ -35,6 +35,7 @@ class Repository(Protocol):
     # --- invite codes ---
     def save_invite_code(self, code: InviteCode) -> None: ...
     def get_invite_code(self, code: str) -> InviteCode | None: ...
+    def list_invite_codes(self) -> list[InviteCode]: ...
 
     # --- link state ---
     def get_link_state(self, line_user_id: str) -> LinkState | None: ...
@@ -114,6 +115,9 @@ class InMemoryRepository:
     def get_invite_code(self, code: str) -> InviteCode | None:
         c = self._invite_codes.get(code)
         return c.model_copy(deep=True) if c else None
+
+    def list_invite_codes(self) -> list[InviteCode]:
+        return [c.model_copy(deep=True) for c in self._invite_codes.values()]
 
     # --- link state ---
     def get_link_state(self, line_user_id: str) -> LinkState | None:
