@@ -20,6 +20,7 @@ from .models import (
     LinkState,
     Member,
     MemberStatus,
+    Proposal,
     ReminderPolicy,
     Settings,
 )
@@ -71,6 +72,11 @@ class Repository(Protocol):
     def save_audit(self, entry: AuditLog) -> None: ...
     def list_audit(self, *, limit: int = 100) -> list[AuditLog]: ...
 
+    # --- proposals ---
+    def upsert_proposal(self, proposal: Proposal) -> None: ...
+    def get_proposal(self, proposal_id: str) -> Proposal | None: ...
+    def list_proposals(self, *, status: str | None = None) -> list[Proposal]: ...
+
 
 class InMemoryRepository:
     """テスト・ローカル用のインメモリ実装。"""
@@ -87,6 +93,7 @@ class InMemoryRepository:
         self._logs: list[DeliveryLog] = []
         self._escalations: dict[str, Escalation] = {}
         self._audit: list[AuditLog] = []
+        self._proposals: dict[str, Proposal] = {}
 
     # --- members ---
     def upsert_member(self, member: Member) -> None:
@@ -204,6 +211,20 @@ class InMemoryRepository:
     def list_audit(self, *, limit: int = 100) -> list[AuditLog]:
         items = sorted(self._audit, key=lambda a: a.at, reverse=True)[:limit]
         return [a.model_copy(deep=True) for a in items]
+
+    # --- proposals ---
+    def upsert_proposal(self, proposal: Proposal) -> None:
+        self._proposals[proposal.proposal_id] = proposal.model_copy(deep=True)
+
+    def get_proposal(self, proposal_id: str) -> Proposal | None:
+        p = self._proposals.get(proposal_id)
+        return p.model_copy(deep=True) if p else None
+
+    def list_proposals(self, *, status: str | None = None) -> list[Proposal]:
+        items = list(self._proposals.values())
+        if status is not None:
+            items = [p for p in items if p.status == status]
+        return [p.model_copy(deep=True) for p in items]
 
 
 def utcnow() -> datetime:

@@ -42,6 +42,7 @@ from .deps import get_repo
 from .invite import verify_and_link
 from .line_messages import apply_postback, build_attendance_request
 from .member_menu import handle_member_text
+from .proposals_api import router as proposals_router
 from .reminders import plan_reminders
 
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +76,8 @@ async def access_guard(request: Request, call_next):
 
 app.include_router(admin_router, prefix="/admin")  # 後方互換
 app.include_router(admin_router, prefix="/api")  # SPA(管理ダッシュボード)用
+app.include_router(proposals_router, prefix="/admin")
+app.include_router(proposals_router, prefix="/api")
 app.include_router(dashboard_router)
 
 

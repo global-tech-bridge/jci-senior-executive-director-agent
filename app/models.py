@@ -266,3 +266,85 @@ class AuditLog(BaseModel):
     action: str
     target: str | None = None
     detail: str | None = None
+
+
+# --------------------------------------------------------------------------- #
+# 議案ライフサイクル（docs/dashboard-design.md §4.1, F6）
+# --------------------------------------------------------------------------- #
+class ProposalStage(StrEnum):
+    entry = "entry"  # エントリー
+    submitted = "submitted"  # 資料提出
+    sed_review = "sed_review"  # 専務レビュー
+    goyaku = "goyaku"  # 五役会
+    board = "board"  # 理事会上程
+    decided = "decided"  # 審議結果
+    executing = "executing"  # 事業実施
+    reported = "reported"  # 報告
+    verified = "verified"  # 検証
+
+
+# カンバンの表示順
+PROPOSAL_STAGE_ORDER = [
+    ProposalStage.entry,
+    ProposalStage.submitted,
+    ProposalStage.sed_review,
+    ProposalStage.goyaku,
+    ProposalStage.board,
+    ProposalStage.decided,
+    ProposalStage.executing,
+    ProposalStage.reported,
+    ProposalStage.verified,
+]
+
+
+class ProposalDeadlines(BaseModel):
+    entry: datetime | None = None
+    submit: datetime | None = None
+    deliver: datetime | None = None
+
+
+class FormatCheckResult(BaseModel):
+    passed: bool
+    issues: list[str] = Field(default_factory=list)
+    checked_at: datetime | None = None
+
+
+class LlmReview(BaseModel):
+    summary: str
+    points: list[str] = Field(default_factory=list)
+    concerns: list[str] = Field(default_factory=list)
+    reviewed_at: datetime | None = None
+    model: str | None = None
+
+
+class SedApproval(BaseModel):
+    status: str = "pending"  # pending | approved | returned
+    by: str | None = None
+    at: datetime | None = None
+    comment: str | None = None
+
+
+class ProposalHistory(BaseModel):
+    at: datetime
+    stage: ProposalStage
+    by: str = "system"
+
+
+class Proposal(BaseModel):
+    proposal_id: str
+    lom_id: str = "inawashiro"
+    title: str
+    number: str | None = None  # 第N号議案
+    committee: str | None = None
+    owner_member_id: str | None = None
+    event_id: str | None = None  # 上程先の会議体
+    stage: ProposalStage = ProposalStage.entry
+    doc_type: str = "事業計画書"
+    content: str | None = None  # 議案本文（Drive取込/手入力）
+    storage_uri: str | None = None
+    deadlines: ProposalDeadlines = Field(default_factory=ProposalDeadlines)
+    format_check: FormatCheckResult | None = None
+    llm_review: LlmReview | None = None
+    sed_approval: SedApproval = Field(default_factory=SedApproval)
+    history: list[ProposalHistory] = Field(default_factory=list)
+    status: str = "open"  # open | closed
