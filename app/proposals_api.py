@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from .audit import write_audit
 from .deps import get_repo
+from .drive_import import import_drive_folder
 from .format_check import run_format_check
 from .llm import review_proposal
 from .models import (
@@ -54,6 +55,35 @@ class ProposalUpdate(BaseModel):
 @router.get("/proposals")
 def list_proposals(status: str | None = None):
     return get_repo().list_proposals(status=status)
+
+
+class DriveImport(BaseModel):
+    folder_id: str
+    dry_run: bool = False
+
+
+@router.post("/proposals/import-drive")
+def import_drive(
+    payload: DriveImport,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    """Drive フォルダ内の Google ドキュメントを議案として取り込む。"""
+    repo = get_repo()
+    actor = _actor(x_goog_authenticated_user_email)
+    try:
+        summary = import_drive_folder(
+            repo, payload.folder_id, now=datetime.now(),
+            dry_run=payload.dry_run, actor=actor,
+        )
+    except Exception as exc:  # noqa: BLE001 - Drive権限/接続失敗を502で返す
+        raise HTTPException(status_code=502, detail=f"Drive取込に失敗: {exc}") from exc
+    if not payload.dry_run:
+        write_audit(
+            repo, actor=actor, action="proposal.import_drive",
+            target=payload.folder_id,
+            detail=f"created={summary.created} updated={summary.updated}",
+        )
+    return summary
 
 
 @router.get("/proposals/{proposal_id}")
