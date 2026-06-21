@@ -74,6 +74,12 @@ class FirestoreRepository:
         snap = self._db.collection(COL_INVITE_CODES).document(code).get()
         return InviteCode.model_validate(snap.to_dict()) if snap.exists else None
 
+    def list_invite_codes(self) -> list[InviteCode]:
+        return [
+            InviteCode.model_validate(s.to_dict())
+            for s in self._db.collection(COL_INVITE_CODES).stream()
+        ]
+
     # --- link state ---
     def get_link_state(self, line_user_id: str) -> LinkState | None:
         snap = self._db.collection(COL_LINK_STATES).document(line_user_id).get()

@@ -21,6 +21,7 @@ from .deps import get_repo
 from .events import resolve_targets
 from .home import build_home
 from .invite import issue_invite
+from .members_view import attendance_history, invite_status
 from .models import (
     AttendanceStatus,
     DeliveryJob,
@@ -252,6 +253,19 @@ def list_members(active_only: bool = False):
     return get_repo().list_members(active_only=active_only)
 
 
+@router.get("/members/invite-status")
+def members_invite_status():
+    return invite_status(get_repo(), now=datetime.now())
+
+
+@router.get("/members/{member_id}/attendance-history")
+def member_attendance_history(member_id: str):
+    hist = attendance_history(get_repo(), member_id)
+    if hist is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    return hist
+
+
 @router.post("/members")
 def upsert_member(member: Member):
     get_repo().upsert_member(member)
@@ -259,9 +273,18 @@ def upsert_member(member: Member):
 
 
 @router.post("/members/{member_id}/invite")
-def create_invite(member_id: str):
+def create_invite(
+    member_id: str,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
     repo = get_repo()
     if repo.get_member(member_id) is None:
         raise HTTPException(status_code=404, detail="member not found")
     invite = issue_invite(repo, member_id, now=datetime.now())
+    write_audit(
+        repo,
+        actor=_actor(x_goog_authenticated_user_email),
+        action="member.invite",
+        target=member_id,
+    )
     return invite
