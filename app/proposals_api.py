@@ -16,6 +16,7 @@ from .models import (
     ProposalDeadlines,
     ProposalHistory,
     ProposalStage,
+    SedApproval,
 )
 
 router = APIRouter(tags=["proposals"])
@@ -135,6 +136,56 @@ def llm_review(
         action="proposal.llm_review", target=proposal_id,
     )
     return review
+
+
+class ApprovalAction(BaseModel):
+    comment: str | None = None
+
+
+@router.post("/proposals/{proposal_id}/approve")
+def approve_proposal(
+    proposal_id: str,
+    payload: ApprovalAction,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    """専務理事が議案を承認。承認時はレビュー段階なら五役会へ進める。"""
+    repo = get_repo()
+    p = repo.get_proposal(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    actor = _actor(x_goog_authenticated_user_email)
+    now = datetime.now()
+    p.sed_approval = SedApproval(status="approved", by=actor, at=now, comment=payload.comment)
+    if p.stage == ProposalStage.sed_review:
+        p.stage = ProposalStage.goyaku
+        p.history.append(ProposalHistory(at=now, stage=p.stage, by=actor))
+    repo.upsert_proposal(p)
+    write_audit(repo, actor=actor, action="proposal.approve", target=proposal_id)
+    return p
+
+
+@router.post("/proposals/{proposal_id}/return")
+def return_proposal(
+    proposal_id: str,
+    payload: ApprovalAction,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    """専務理事が議案を差戻し。資料提出段階へ戻す。"""
+    repo = get_repo()
+    p = repo.get_proposal(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    actor = _actor(x_goog_authenticated_user_email)
+    now = datetime.now()
+    p.sed_approval = SedApproval(status="returned", by=actor, at=now, comment=payload.comment)
+    p.stage = ProposalStage.submitted
+    p.history.append(ProposalHistory(at=now, stage=p.stage, by=actor))
+    repo.upsert_proposal(p)
+    write_audit(
+        repo, actor=actor, action="proposal.return",
+        target=proposal_id, detail=payload.comment,
+    )
+    return p
 
 
 class StageUpdate(BaseModel):
