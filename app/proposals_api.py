@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from .audit import write_audit
 from .deps import get_repo
+from .format_check import run_format_check
 from .models import (
     Proposal,
     ProposalDeadlines,
@@ -95,6 +96,19 @@ def update_proposal(proposal_id: str, payload: ProposalUpdate):
     updated = p.model_copy(update=data)
     repo.upsert_proposal(updated)
     return updated
+
+
+@router.post("/proposals/{proposal_id}/format-check")
+def format_check(proposal_id: str):
+    repo = get_repo()
+    p = repo.get_proposal(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    result = run_format_check(p)
+    result.checked_at = datetime.now()
+    p.format_check = result
+    repo.upsert_proposal(p)
+    return result
 
 
 class StageUpdate(BaseModel):
