@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .models import (
     Attendance,
+    AuditLog,
     DeliveryJob,
     DeliveryLog,
     Escalation,
@@ -31,6 +32,7 @@ COL_SETTINGS = "settings"
 COL_JOBS = "deliveryJobs"
 COL_LOGS = "deliveryLogs"
 COL_ESCALATIONS = "escalations"
+COL_AUDIT = "auditLogs"
 SETTINGS_DOC = "global"
 
 
@@ -155,3 +157,17 @@ class FirestoreRepository:
         if status is not None:
             col = col.where("status", "==", status)
         return [Escalation.model_validate(s.to_dict()) for s in col.stream()]
+
+    # --- audit ---
+    def save_audit(self, entry: AuditLog) -> None:
+        self._db.collection(COL_AUDIT).document(entry.audit_id).set(entry.model_dump(mode="json"))
+
+    def list_audit(self, *, limit: int = 100) -> list[AuditLog]:
+        from google.cloud.firestore import Query
+
+        col = (
+            self._db.collection(COL_AUDIT)
+            .order_by("at", direction=Query.DESCENDING)
+            .limit(limit)
+        )
+        return [AuditLog.model_validate(s.to_dict()) for s in col.stream()]

@@ -14,8 +14,10 @@ __pycache__/
 .venv/
 venv/
 
-# Node
+# Node / SPA
 node_modules/
+web/node_modules/
+web/dist/
 
 # OS / editor
 .DS_Store

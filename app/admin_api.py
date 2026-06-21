@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from . import line_push
 from .attendance import aggregate, record_attendance
+from .audit import write_audit
 from .delivery import execute_delivery
 from .deps import get_repo
 from .events import resolve_targets
@@ -33,7 +34,8 @@ from .models import (
 from .reminders import default_policies, resolve_audience, stage_job_id
 from .summary import build_summary_text, close_event, plan_summary_notification
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+# prefix なし: main.py が /admin（互換）と /api（SPA用）の両方に mount する
+router = APIRouter(tags=["admin"])
 
 
 def _actor(email: str | None) -> str:
@@ -216,9 +218,24 @@ def get_settings():
 
 
 @router.put("/settings")
-def put_settings(settings: Settings):
-    get_repo().save_settings(settings)
+def put_settings(
+    settings: Settings,
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+):
+    repo = get_repo()
+    repo.save_settings(settings)
+    write_audit(
+        repo,
+        actor=_actor(x_goog_authenticated_user_email),
+        action="settings.update",
+        detail=f"kill_switch={settings.kill_switch}",
+    )
     return settings
+
+
+@router.get("/audit-logs")
+def audit_logs(limit: int = 100):
+    return get_repo().list_audit(limit=limit)
 
 
 # --------------------------------------------------------------------------- #

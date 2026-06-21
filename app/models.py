@@ -255,3 +255,14 @@ class Escalation(BaseModel):
     text: str | None = None
     created_at: datetime
     status: str = "open"  # open | handled
+
+
+class AuditLog(BaseModel):
+    """操作・自動配信・設定変更の監査証跡（docs/dashboard-design.md §4.2）。"""
+
+    audit_id: str
+    at: datetime
+    actor: str  # email or "system"
+    action: str
+    target: str | None = None
+    detail: str | None = None
