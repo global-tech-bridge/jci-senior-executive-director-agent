@@ -138,6 +138,12 @@ def root():
     return {"service": "jci-sed-agent", "stage": "M0", "status": "ok"}
 
 
+@app.get("/favicon.ico")
+def favicon():
+    # ファビコンは SPA 側で data URI を使うため、直接要求には 204 を返して 404 を防ぐ
+    return Response(status_code=204)
+
+
 def _health_payload():
     return {
         "ok": True,
