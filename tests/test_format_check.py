@@ -52,7 +52,7 @@ def test_run_format_check_empty():
     assert any("空" in i for i in r.issues)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def repo():
     r = InMemoryRepository()
     set_repo(r)
