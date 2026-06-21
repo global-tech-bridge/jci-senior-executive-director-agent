@@ -60,6 +60,15 @@ def kpi_trends_endpoint():
     return attendance_trends(get_repo())
 
 
+@router.get("/delivery-logs")
+def delivery_logs(result: str | None = None, limit: int = 200):
+    """配信ログ（新しい順）。result=ok|blocked|failed でフィルタ。"""
+    logs = sorted(get_repo().list_delivery_logs(), key=lambda x: x.sent_at, reverse=True)
+    if result:
+        logs = [x for x in logs if x.result.value == result]
+    return logs[:limit]
+
+
 # --------------------------------------------------------------------------- #
 # イベント
 # --------------------------------------------------------------------------- #
