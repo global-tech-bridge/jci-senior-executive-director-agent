@@ -21,6 +21,7 @@ from .deps import get_repo
 from .events import resolve_targets
 from .home import build_home
 from .invite import issue_invite
+from .kpi import attendance_trends, kpi_overview
 from .members_view import attendance_history, invite_status
 from .models import (
     AttendanceStatus,
@@ -47,6 +48,16 @@ def _actor(email: str | None) -> str:
 @router.get("/home")
 def home():
     return build_home(get_repo(), now=datetime.now())
+
+
+@router.get("/kpi/overview")
+def kpi_overview_endpoint():
+    return kpi_overview(get_repo(), now=datetime.now())
+
+
+@router.get("/kpi/trends")
+def kpi_trends_endpoint():
+    return attendance_trends(get_repo())
 
 
 # --------------------------------------------------------------------------- #
