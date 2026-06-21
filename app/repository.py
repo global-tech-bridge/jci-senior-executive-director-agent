@@ -10,6 +10,7 @@ from typing import Protocol
 
 from .models import (
     Attendance,
+    AuditLog,
     DeliveryJob,
     DeliveryLog,
     Escalation,
@@ -65,6 +66,10 @@ class Repository(Protocol):
     def save_escalation(self, escalation: Escalation) -> None: ...
     def list_escalations(self, *, status: str | None = None) -> list[Escalation]: ...
 
+    # --- audit ---
+    def save_audit(self, entry: AuditLog) -> None: ...
+    def list_audit(self, *, limit: int = 100) -> list[AuditLog]: ...
+
 
 class InMemoryRepository:
     """テスト・ローカル用のインメモリ実装。"""
@@ -80,6 +85,7 @@ class InMemoryRepository:
         self._jobs: dict[str, DeliveryJob] = {}
         self._logs: list[DeliveryLog] = []
         self._escalations: dict[str, Escalation] = {}
+        self._audit: list[AuditLog] = []
 
     # --- members ---
     def upsert_member(self, member: Member) -> None:
@@ -186,6 +192,14 @@ class InMemoryRepository:
         if status is not None:
             items = [e for e in items if e.status == status]
         return [e.model_copy(deep=True) for e in items]
+
+    # --- audit ---
+    def save_audit(self, entry: AuditLog) -> None:
+        self._audit.append(entry.model_copy(deep=True))
+
+    def list_audit(self, *, limit: int = 100) -> list[AuditLog]:
+        items = sorted(self._audit, key=lambda a: a.at, reverse=True)[:limit]
+        return [a.model_copy(deep=True) for a in items]
 
 
 def utcnow() -> datetime:

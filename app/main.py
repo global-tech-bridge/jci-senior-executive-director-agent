@@ -47,10 +47,10 @@ from .reminders import plan_reminders
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jci-agent")
 
-app = FastAPI(title="JCI SED Agent", version="0.0.1-m0")
+app = FastAPI(title="JCI SED Agent", version="0.1.0")
 
-# /admin・/tasks は非公開。/line/webhook(署名検証)・/・/healthz のみ公開。
-PROTECTED_PREFIXES = ("/admin", "/tasks")
+# /admin・/api・/tasks は非公開。/line/webhook(署名検証)・/・/health のみ公開。
+PROTECTED_PREFIXES = ("/admin", "/api", "/tasks")
 
 
 def _is_authorized(request: Request) -> bool:
@@ -73,8 +73,29 @@ async def access_guard(request: Request, call_next):
     return await call_next(request)
 
 
-app.include_router(admin_router)
+app.include_router(admin_router, prefix="/admin")  # 後方互換
+app.include_router(admin_router, prefix="/api")  # SPA(管理ダッシュボード)用
 app.include_router(dashboard_router)
+
+
+def _mount_spa() -> None:
+    """ビルド済み SPA (web/dist) があれば /app で静的配信する。
+
+    Cloud Run(管理サービス)のイメージに dist を同梱する。dist が無いローカル/テスト
+    環境では何もしない（API・webhook は通常通り動作）。
+    """
+    import os
+
+    from fastapi.staticfiles import StaticFiles
+
+    dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")
+    if os.path.isdir(dist):
+        # html=True で SPA のクライアントルーティング(index.html フォールバック)に対応
+        app.mount("/app", StaticFiles(directory=dist, html=True), name="spa")
+        logger.info("SPA を /app で配信します: %s", dist)
+
+
+_mount_spa()
 
 WELCOME_TEXT = (
     "友だち追加ありがとうございます！\n"
