@@ -19,6 +19,7 @@ from .audit import write_audit
 from .delivery import execute_delivery
 from .deps import get_repo
 from .events import resolve_targets
+from .home import build_home
 from .invite import issue_invite
 from .models import (
     AttendanceStatus,
@@ -40,6 +41,11 @@ router = APIRouter(tags=["admin"])
 
 def _actor(email: str | None) -> str:
     return email or "unknown"
+
+
+@router.get("/home")
+def home():
+    return build_home(get_repo(), now=datetime.now())
 
 
 # --------------------------------------------------------------------------- #
