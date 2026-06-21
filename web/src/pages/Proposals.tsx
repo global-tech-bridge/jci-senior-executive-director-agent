@@ -35,6 +35,7 @@ export default function Proposals() {
   const [sel, setSel] = useState<Proposal | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", committee: "", content: "" });
+  const [folderId, setFolderId] = useState("");
 
   const load = () => api<Proposal[]>("/proposals").then(setItems).catch((e) => setMsg(e.message));
   useEffect(() => {
@@ -46,6 +47,25 @@ export default function Proposals() {
     await api("/proposals", { method: "POST", body: JSON.stringify(form) });
     setForm({ title: "", committee: "", content: "" });
     load();
+  }
+
+  async function importDrive(dryRun: boolean) {
+    if (!folderId.trim()) {
+      setMsg("DriveフォルダIDを入力してください。");
+      return;
+    }
+    try {
+      const r = await api<{ total: number; created: number; updated: number; dry_run: boolean }>(
+        "/proposals/import-drive",
+        { method: "POST", body: JSON.stringify({ folder_id: folderId.trim(), dry_run: dryRun }) }
+      );
+      setMsg(
+        `${r.dry_run ? "[確認]" : "[取込]"} 対象${r.total}件 / 新規${r.created} 更新${r.updated}`
+      );
+      if (!dryRun) load();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
   }
 
   async function act(id: string, path: string, body?: object) {
@@ -87,6 +107,23 @@ export default function Proposals() {
             追加
           </button>
         </div>
+        <div className="flex flex-wrap gap-2 items-end text-sm mt-3 pt-3 border-t">
+          <input
+            className="border rounded p-1 flex-1 min-w-[220px]"
+            placeholder="DriveフォルダID（議案資料の入ったフォルダ）"
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+          />
+          <button className="bg-slate-200 text-navy rounded px-3 py-1" onClick={() => importDrive(true)}>
+            取込確認(dry-run)
+          </button>
+          <button className="bg-brand text-white rounded px-3 py-1" onClick={() => importDrive(false)}>
+            Driveから取込
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mt-1">
+          ※ フォルダを drive-reader@jci-sed-agent.iam.gserviceaccount.com に共有しておく必要があります。
+        </p>
       </Card>
 
       <Card title="カンバン">
